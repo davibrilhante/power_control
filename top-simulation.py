@@ -7,28 +7,22 @@ from commpy import modulation as mod
 from commpy import channels as ch
 from commpy import channelcoding
 from commpy import utilities as utils
-'''
-from gnuradio import blocks
-from gnuradio import fft
-from gnuradio import channels
-from gnuradio import digital
-from gnuradio import fec
-import gnuradio as gr
-import physical-layer as phy
-'''
-SEED = int(sys.argv[1])
+
+
+SEED = int(sys.argv[5])
 np.random.seed(SEED)
 
 CENTER_FREQ=700e6
 BANDWIDTH = 40e6
-SIMULATION_TIME=st.seconds(24*3600)
-
+SIMULATION_TIME=st.seconds(365*24*3600)
+PKT_LOSS = 0
+TX_PKTS = 0
 
 
 def sensorTPCAlgorithm(txPower, rxPower, rxMinPower, txMaxPower, SNRThreshold, noiseFig, offset):
     pathLoss = abs(txPower) - abs(rxPower)
     algPower = (abs(rxMinPower) - abs(pathLoss))*(1+offset)
-    print("Algorithm calculated power: %f" %(algPower))
+    #print("Algorithm calculated power: %f" %(algPower))
     if algPower - pathLoss - noiseFig < SNRThreshold:
         algPower = SNRThreshold + noiseFig + pathLoss
     return min(txMaxPower, algPower)
@@ -69,18 +63,26 @@ class Channel(object):
 class Battery(int):
     def __init__(self,voltage=3,drawncurrent=200):
         self.charge=voltage*drawncurrent*3.6
+        self.drawncurrent = drawncurrent
+        self.baseIdle = 1e-6
+        self.baseActive = 1000*self.baseIdle
 
-    def sendMessage(self, spent, length):
-        self.charge -= 1e-6*length
+    def sendMessage(self, power, length, rate):
+        #Decreases the transmission
+        self.charge -= (10**((power - 30)/10))*(length/rate)*3600/self.drawncurrent
+        #Decreases the processing
+        self.charge -= self.baseActive*length + np.random.normal(0,self.baseActive)
 
-    def receiveMessage(self, spent, length):
-        self.charge -= 1e-6*length
+    def receiveMessage(self, power, length, rate):
+        #Decreases the transmission
+        self.charge -= (10**((power - 30)/10))*(length/rate)*3600/self.drawncurrent
+        self.charge -= self.baseActive*length + np.random.normal(0,self.baseActive)
 
     def stayAwake(self, spent, time):
-        self.charge -= 1e-6*time
+        self.charge -= self.baseActive*time + spent
 
     def stayAsleep(self, spent, time):
-        self.charge -= 1e-6*time
+        self.charge -= self.baseIdle*time + spent
 
 class Message(str):
     def __new__(cls, *args, **kw):
@@ -160,22 +162,29 @@ class Sensor(object):
         self.scenario = scenario
         self.x=scenario.radius
         self.y=scenario.radius
-        self.txPower=10
+        self.txPower=23 #in dBm
         self.period = 1 #1 hour
         self.lifecycle = {
-            'awake':10, #seconds
-            'sleep':10*60 - 10, #seconds
-            'alive':True
+            'awake':2, #seconds
+            'sleep':10 - 2, #seconds
+            'alive':True,
+            'lifetime':0
             }
 
         self.id = Id
         self.battery = Battery()
 
-        self.antennaGain = 0 #antenna gain in dB
-        self.power = 23 #in dBm
+        self.antennaGain = 2.1 #antenna gain in dB
 
-        self.TPCOffset = 1
-        self.cache = []
+        self.TPCOffset = float(sys.argv[4]) #Transmission power control algorithm offset
+        self.txRate = 250e3 # in bits per second
+        self.SNRThreshold = 20 #SNR needed to succesfully decode the message at the given rate
+        self.cache = None #stores the last received message
+        self.sensibility = -85 #dBm
+
+
+        self.lifeProcess = 0
+        self.txProcess = 0
 
 
         while self.x**2 + self.y**2 > (self.scenario.radius**2):
@@ -184,22 +193,53 @@ class Sensor(object):
 
     def setMessagePeriod(self, period):  
         self.period = period
-        self.scenario.process(self.transmitMessage())
+        self.txProcess = self.scenario.process(self.transmitMessage())
+        self.lifeProcess = self.scenario.process(self.lifecycleRun())
 
-    def transmitMessage(self):
+    def lifecycleRun(self):
+        while True:
+            yield self.scenario.timeout(self.lifecycle['awake'])
+            self.battery.stayAwake(0, self.lifecycle['awake'])
+            yield self.scenario.timeout(self.lifecycle['sleep'])
+            self.battery.stayAsleep(0, self.lifecycle['awake'])
+            if self.battery.charge <= 0:
+                self.lifecycle['alive']=False
+                sp.exceptions.StopProcess(self.lifeProcess)
+                sp.exceptions.StopProcess(self.txProcess)
+                break
+
+    def transmitMessage(self, tpc=True):
         while True:
             yield self.scenario.timeout(self.period)
             msg = Message()
             msg.loremIpsum(8)
-            power = sensorTPCAlgorithm(38,-138+np.random.normal(0,10), self.scenario.network.sensibility, self.power, self.scenario.network.SNRThreshold, self.scenario.noiseFigure, self.TPCOffset)
-            msg.power = self.antennaGain + power
-            self.battery.sendMessage(None,msg.length())
+            if tpc and self.cache != None:
+                power = sensorTPCAlgorithm(self.cache.header['transmittedPower'],self.cache.power, 
+                    self.scenario.network.sensibility, self.txPower, self.scenario.network.SNRThreshold, 
+                    self.scenario.noiseFigure, self.TPCOffset)
+                msg.power = self.antennaGain + power
+            else:
+                msg.power = self.antennaGain + self.txPower
+            self.battery.sendMessage(self.txPower, msg.length(),self.txRate)
             self.scenario.sendUserMessage(msg, self)       
+
+            if self.battery.charge <= 0:
+                print("Battery Charge %f" % self.battery.charge)
+                print("Battery Charge at %d" % self.scenario.now)
+                self.lifecycle['lifetime'] = self.scenario.now
+                sp.exceptions.StopProcess(self.lifeProcess)
+                sp.exceptions.StopProcess(self.txProcess)
+                break
 
 
     def receiveMessage(self, message):
-        self.battery.receiveMessage()
-        print(message.payload)
+        global PKT_LOSS
+        #self.battery.receiveMessage()
+        if message.power + self.antennaGain >= self.sensibility:
+            self.cache = message
+        else:
+            PKT_LOSS = PKT_LOSS + 1
+            #print("Unsuficient transmited power %d (received) x %d (sensibility)" % (message.power, self.sensibility))
 
     
 
@@ -219,36 +259,36 @@ class Network(object):
 
         self.antennaGain = 8
         self.users = []
-        self.SNRThreshold = 20
+        self.SNRThreshold = float(sys.argv[3])
+
+        self.period = 0
+        self.noiseFigure = 10*np.log10(BANDWIDTH*1.38e-23*290)
 
 
     def transmitMessage(self):
-        while True:
-            yield self.scenario.timeout(self.period)
-            msg = Message()
-            msg.loremIpsum(8)
-            msg.power = self.power + self.antennaGain
-            self.battery.sendMessage(None,msg.length())
-            self.scenario.sendNetworkMessage(msg, self)       
-
+        msg = Message()
+        msg.loremIpsum(8)
+        msg.power = self.txPower + self.antennaGain
+        msg.header = {'transmittedPower':msg.power}
+        #self.battery.sendMessage(None,msg.length())
+        return msg
 
     def receiveMessage(self, message):
-        self.battery.receiveMessage()
-        print(message.payload)
-
-    def receiveMessage(self, message):
+        global PKT_LOSS
         #print(message)
-        if message.power + self.antennaGain >= self.sensibility:
-            print(message.payload)
+        #self.batterddy.receiveMessage()
+        if (message.power + self.antennaGain >= self.sensibility) and (message.power - self.noiseFigure >= self.SNRThreshold):
+            1 #print(message.payload)
         else:
-            print("Unsuficient transmited power %d (received) x %d (sensibility)" % (message.power, self.sensibility))
+            PKT_LOSS += 1
+            #print("Unsuficient transmited power %d (received) x %d (sensibility)" % (message.power, self.sensibility))
         
 
 class Scenario(sp.Environment):
     def __init__(self, radius=50000):#radius im meter
         sp.Environment.__init__(self)
         self.radius = radius
-        self.network = Network()
+        self.network = Network(int(sys.argv[2]))
         self.sensors = []
         self.channel = Channel()
         self.noiseFigure = 10*np.log10(BANDWIDTH*1.38e-23*290)
@@ -256,6 +296,18 @@ class Scenario(sp.Environment):
     def turnOnSensor(self, turnOnTime, period, Id):
         yield self.timeout(turnOnTime)
         self.sensors[Id].setMessagePeriod(period)
+
+    def broadcastMessage(self, period):
+        global TX_PKTS
+        while True:
+            yield self.timeout(period)
+            for sensor in self.sensors:
+                if not sensor.lifecycle['alive']: 
+                    continue
+                else:
+                    TX_PKTS += 1
+                    message = self.network.transmitMessage()
+                    self.channel.transportMessage(message,self.network, sensor, False)
 
 
     def spreadsensors(self, nsensors):
@@ -267,21 +319,23 @@ class Scenario(sp.Environment):
                 check.append([sensor.x, sensor.y])
                 offset = np.random.poisson(30)
                 self.process(self.turnOnSensor(offset, 1800,self.sensors[-1].id))
+        self.process(self.broadcastMessage(10))
         self.network.users = self.sensors
 
 
     def sendUserMessage(self, message, sensor):
-        print(self.now)
-        self.channel.transportMessage(message, sensor, self.network, True)
-
-    def sendNetworkMessage(self, message, sensor):
-        print(self.now)
-        self.channel.transportMessage(message, self.network, sensor, True)
+        global TX_PKTS
+        #print(self.now)
+        TX_PKTS += 1
+        self.channel.transportMessage(message, sensor, self.network, False)
 
         
 
 
 if __name__=="__main__":
     env = Scenario()
-    env.spreadsensors(10)
+    env.spreadsensors(int(sys.argv[1]))
     env.run(until=SIMULATION_TIME)
+    avgLifeTime = [i.lifecycle['lifetime'] for i in env.sensors]
+    print(sum(avgLifeTime)/len(env.sensors))
+    print(PKT_LOSS/TX_PKTS)
