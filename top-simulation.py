@@ -8,13 +8,13 @@ from commpy import channels as ch
 from commpy import channelcoding
 from commpy import utilities as utils
 
-
-SEED = int(sys.argv[5])
+YEARS = int(sys.argv[6])
+SEED = int(sys.argv[7])
 np.random.seed(SEED)
 
 CENTER_FREQ=700e6
 BANDWIDTH = 40e6
-SIMULATION_TIME=st.seconds(365*24*3600)
+SIMULATION_TIME=st.seconds(YEARS*365*24*3600)
 PKT_LOSS = 0
 TX_PKTS = 0
 
@@ -65,7 +65,7 @@ class Battery(int):
         self.charge=voltage*drawncurrent*3.6
         self.drawncurrent = drawncurrent
         self.baseIdle = 1e-6
-        self.baseActive = 1000*self.baseIdle
+        self.baseActive = 50*self.baseIdle
 
     def sendMessage(self, power, length, rate):
         #Decreases the transmission
@@ -193,7 +193,10 @@ class Sensor(object):
 
     def setMessagePeriod(self, period):  
         self.period = period
-        self.txProcess = self.scenario.process(self.transmitMessage())
+        if sys.argv[5] == '1':
+            self.txProcess = self.scenario.process(self.transmitMessage())
+        else:
+            self.txProcess = self.scenario.process(self.transmitMessage(None))
         self.lifeProcess = self.scenario.process(self.lifecycleRun())
 
     def lifecycleRun(self):
