@@ -65,7 +65,7 @@ class Battery(int):
         self.charge=voltage*drawncurrent*3.6
         self.drawncurrent = drawncurrent
         self.baseIdle = 1e-6
-        self.baseActive = 50*self.baseIdle
+        self.baseActive = 1000*self.baseIdle
 
     def sendMessage(self, power, length, rate):
         #Decreases the transmission
@@ -196,7 +196,7 @@ class Sensor(object):
         if sys.argv[5] == '1':
             self.txProcess = self.scenario.process(self.transmitMessage())
         else:
-            self.txProcess = self.scenario.process(self.transmitMessage(None))
+            self.txProcess = self.scenario.process(self.transmitMessage(False))
         self.lifeProcess = self.scenario.process(self.lifecycleRun())
 
     def lifecycleRun(self):
@@ -216,7 +216,7 @@ class Sensor(object):
             yield self.scenario.timeout(self.period)
             msg = Message()
             msg.loremIpsum(8)
-            if tpc and self.cache != None:
+            if tpc and (self.cache != None):
                 power = sensorTPCAlgorithm(self.cache.header['transmittedPower'],self.cache.power, 
                     self.scenario.network.sensibility, self.txPower, self.scenario.network.SNRThreshold, 
                     self.scenario.noiseFigure, self.TPCOffset)
