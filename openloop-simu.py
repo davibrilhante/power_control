@@ -48,45 +48,6 @@ def sensorTPCAlgorithm(txPower, rxPower, rxMinPower, txMaxPower, SNRThreshold, n
     '''
     return min(txMaxPower, algPower)
 
-def sensorTPCClosedLoop(txPower, rxPower, rxMinPower, txMaxPower, SNRThreshold, noiseFig, offset):
-    pathLoss = abs(txPower) + abs(rxPower)
-    algPower = abs(rxMinPower + pathLoss)*(1+offset)
-    #print("Algorithm calculated power: %f" %(algPower))
-    condition = 1
-    if algPower > txMaxPower:
-        condition = 3
-
-    if (algPower - pathLoss) < (noiseFig + SNRThreshold):
-        condition = 2
-        algPower = (pathLoss - (abs(noiseFig) - SNRThreshold))*(1+offset)
-
-    '''
-    verbose = True
-    if verbose:
-        print('========================================')
-        print('condition: %f' % (condition))
-        print('Tx Power: %f' % (txPower))
-        print('Rcvd Power: %f' % (rxPower))
-        print('Rx Sensebility: %f' % (rxMinPower))
-        print('SNR Threshold: %f' % (SNRThreshold))
-        print('Path Loss: %f' % (pathLoss))
-        print('Noise Power: %f' % (noiseFig))
-        print('Power to SNR: %f' % (noiseFig + SNRThreshold))
-        print('Calculated Power: %f' % (algPower))
-        print('Calculated Rcv Power: %f' % (algPower - pathLoss))
-    '''
-    return min(txMaxPower, algPower)
-
-def NetworkTPCAlgorithm(rssi, txpower, offset):
-    #I need to consider another base station to reduce interference
-    1
-
-
-
-def ltePowerControl(ClosedLoop, txPower, txRate, rxPower, txMaxPower, rxMinPower, noiseFig):
-    1
-
-
 
 class Channel(object):
     def __init__(self, snr=0, shadowingStd=1):
@@ -130,8 +91,8 @@ class Battery(int):
 
     def receiveMessage(self, power, length, rate):
         #Decreases the transmission
-        self.charge -= (10**((power - 30)/10))*(length/rate)*3600/self.drawncurrent
-        self.charge -= self.baseActive*length + np.random.normal(self.baseActive, self.baseIdle)
+        self.charge -= self.baseActive*(length/rate)*3600/self.drawncurrent + np.random.normal(self.baseActive, self.baseIdle)
+        #self.charge -= self.baseActive*length + np.random.normal(self.baseActive, self.baseIdle)
 
     def stayAwake(self, spent, time):
         self.charge -= self.baseActive*time + spent
