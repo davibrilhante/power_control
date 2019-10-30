@@ -8,8 +8,8 @@ from commpy import channels as ch
 from commpy import channelcoding
 from commpy import utilities as utils
 
-YEARS = float(sys.argv[6])
-SEED = int(sys.argv[7])
+YEARS = float(sys.argv[7])
+SEED = int(sys.argv[8])
 np.random.seed(SEED)
 
 CENTER_FREQ=700e6
@@ -18,73 +18,27 @@ SIMULATION_TIME=st.seconds(YEARS*365*24*3600)
 PKT_LOSS = 0
 TX_PKTS = 0
 
+betaOffset = [0, 0] + [1.125 + i*0.125 for i in range(2)]+[1.625 + i*0.25 for i in range(4)]+[2.875, 3.125, 3.5, 4, 5, 6.25]
 
-def sensorTPCAlgorithm(txPower, rxPower, rxMinPower, txMaxPower, SNRThreshold, noiseFig, offset):
-    pathLoss = abs(txPower) + abs(rxPower)
-    algPower = abs(rxMinPower + pathLoss)*(1+offset)
-    #print("Algorithm calculated power: %f" %(algPower))
-    condition = 1
-    if algPower > txMaxPower:
-        condition = 3
+def ltePowerControl(ClosedLoop, PRBPower, physicalRB, alpha, cqi, paramK, recvPower, txPower, txPMax):
+    pathLoss = abs(recvPower) + abs(txPower)
 
-    if (algPower - pathLoss) < (noiseFig + SNRThreshold):
-        condition = 2
-        algPower = (pathLoss - (abs(noiseFig) - SNRThreshold))*(1+offset)
+    if ClosedLoop:
+        BPRE = 4
+        if paramK == 1.25:
+            deltaMCS = 10*np.log10((2**(BPRE*1.25)-1)*betaOffset[cqi])
+        elif paramK == 0:
+            deltaMCS = 0
+        else:
+            print("Not a valid param K")
+            return 0
 
-    '''
-    verbose = True
-    if verbose:
-        print('========================================')
-        print('condition: %f' % (condition))
-        print('Tx Power: %f' % (txPower))
-        print('Rcvd Power: %f' % (rxPower))
-        print('Rx Sensebility: %f' % (rxMinPower))
-        print('SNR Threshold: %f' % (SNRThreshold))
-        print('Path Loss: %f' % (pathLoss))
-        print('Noise Power: %f' % (noiseFig))
-        print('Power to SNR: %f' % (noiseFig + SNRThreshold))
-        print('Calculated Power: %f' % (algPower))
-        print('Calculated Rcv Power: %f' % (algPower - pathLoss))
-    '''
-    return min(txMaxPower, algPower)
+        functionI = np.random.choice([-1, 0, 1, 3])
 
-def sensorTPCClosedLoop(txPower, rxPower, rxMinPower, txMaxPower, SNRThreshold, noiseFig, offset):
-    pathLoss = abs(txPower) + abs(rxPower)
-    algPower = abs(rxMinPower + pathLoss)*(1+offset)
-    #print("Algorithm calculated power: %f" %(algPower))
-    condition = 1
-    if algPower > txMaxPower:
-        condition = 3
+        return min(txPMax, PRBPower + 10*np.log(physicalRB) + alpha*pathLoss + deltaMCS + functionI)
 
-    if (algPower - pathLoss) < (noiseFig + SNRThreshold):
-        condition = 2
-        algPower = (pathLoss - (abs(noiseFig) - SNRThreshold))*(1+offset)
-
-    '''
-    verbose = True
-    if verbose:
-        print('========================================')
-        print('condition: %f' % (condition))
-        print('Tx Power: %f' % (txPower))
-        print('Rcvd Power: %f' % (rxPower))
-        print('Rx Sensebility: %f' % (rxMinPower))
-        print('SNR Threshold: %f' % (SNRThreshold))
-        print('Path Loss: %f' % (pathLoss))
-        print('Noise Power: %f' % (noiseFig))
-        print('Power to SNR: %f' % (noiseFig + SNRThreshold))
-        print('Calculated Power: %f' % (algPower))
-        print('Calculated Rcv Power: %f' % (algPower - pathLoss))
-    '''
-    return min(txMaxPower, algPower)
-
-def NetworkTPCAlgorithm(rssi, txpower, offset):
-    #I need to consider another base station to reduce interference
-    1
-
-
-
-def ltePowerControl(ClosedLoop, txPower, txRate, rxPower, txMaxPower, rxMinPower, noiseFig):
-    1
+    else:
+        return min(txPMax, PRBPower + 10*np.log(physicalRB) + alpha*pathLoss)
 
 
 
@@ -130,8 +84,8 @@ class Battery(int):
 
     def receiveMessage(self, power, length, rate):
         #Decreases the transmission
-        self.charge -= (10**((power - 30)/10))*(length/rate)*3600/self.drawncurrent
-        self.charge -= self.baseActive*length + np.random.normal(self.baseActive, self.baseIdle)
+        self.charge -= self.baseActive*(length/rate)*3600/self.drawncurrent + np.random.normal(self.baseActive, self.baseIdle)
+        #self.charge -= self.baseActive*length + np.random.normal(self.baseActive, self.baseIdle)
 
     def stayAwake(self, spent, time):
         self.charge -= self.baseActive*time + spent
@@ -272,11 +226,13 @@ class Sensor(object):
             msg = Message()
             msg.loremIpsum(8)
             if tpc and (self.cache != None):
-                power = sensorTPCAlgorithm(self.cache.header['transmittedPower'],self.cache.power, 
-                    self.scenario.network.sensibility, self.txPower, self.scenario.network.SNRThreshold, 
-                    self.scenario.noiseFigure, self.TPCOffset)
+                #ltePowerControl(ClosedLoop, PRBPower, physicalRB, alpha, cqi, paramK, recvPower, txPower, txPMax)
+                power = ltePowerControl(True, -80, 1, self.TPCOffset, 2, 1.25, self.cache.power, 
+                        self.cache.header['transmittedPower'], self.txPower)
                 msg.power = self.antennaGain + power
             else:
+                power = ltePowerControl(False, -80, 1, self.TPCOffset, 2, 1.25, self.cache.power, 
+                        self.cache.header['transmittedPower'], self.txPower)
                 msg.power = self.antennaGain + self.txPower
             self.battery.sendMessage(msg.power, msg.length(),self.txRate)
             self.scenario.sendUserMessage(msg, self)       
@@ -348,7 +304,7 @@ class Scenario(sp.Environment):
         self.radius = radius
         self.network = Network(int(sys.argv[2]))
         self.sensors = []
-        self.channel = Channel()
+        self.channel = Channel(0, int(sys.argv[6]))
         self.noiseFigure = 10*np.log10(BANDWIDTH*1.38e-23*290)
     
     def turnOnSensor(self, turnOnTime, period, Id):

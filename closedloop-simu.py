@@ -8,8 +8,8 @@ from commpy import channels as ch
 from commpy import channelcoding
 from commpy import utilities as utils
 
-YEARS = float(sys.argv[6])
-SEED = int(sys.argv[7])
+YEARS = float(sys.argv[7])
+SEED = int(sys.argv[8])
 np.random.seed(SEED)
 
 CENTER_FREQ=700e6
@@ -332,6 +332,14 @@ class Network(object):
         msg.header = {'transmittedPower':msg.power}
         msg.type = 2
         self.scenario.sendNetworkMessage(msg, sensor)
+
+    def sendRecover(self, sensor):
+        msg = Message()
+        msg.loremIpsum(2)
+        msg.power = self.antennaGain + self.txPower
+        msg.header = {'transmittedPower':msg.power}
+        msg.type = 3
+        self.scenario.sendNetworkMessage(msg, sensor)
         
 
     def receiveMessage(self, message):
@@ -347,6 +355,9 @@ class Network(object):
                 print("Data Message succesfully received")
         else:
             PKT_LOSS += 1
+            if message.type==0:
+                print("Message lost...")
+                self.sendRecover(message.transmitter)
             #print("Unsuficient transmited power %d (received) x %d (sensibility)" % (message.power, self.sensibility))
         
 
@@ -356,7 +367,7 @@ class Scenario(sp.Environment):
         self.radius = radius
         self.network = Network(self, int(sys.argv[2]))
         self.sensors = []
-        self.channel = Channel()
+        self.channel = Channel(0, int(sys.argv[6]))
         self.noiseFigure = 10*np.log10(BANDWIDTH*1.38e-23*290)
     
     def turnOnSensor(self, turnOnTime, period, Id):
