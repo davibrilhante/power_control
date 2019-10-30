@@ -8,8 +8,8 @@ from commpy import channels as ch
 from commpy import channelcoding
 from commpy import utilities as utils
 
-YEARS = float(sys.argv[6])
-SEED = int(sys.argv[7])
+YEARS = float(sys.argv[7])
+SEED = int(sys.argv[8])
 np.random.seed(SEED)
 
 CENTER_FREQ=700e6
@@ -309,7 +309,7 @@ class Scenario(sp.Environment):
         self.radius = radius
         self.network = Network(int(sys.argv[2]))
         self.sensors = []
-        self.channel = Channel()
+        self.channel = Channel(0, int(sys.argv[6]))
         self.noiseFigure = 10*np.log10(BANDWIDTH*1.38e-23*290)
     
     def turnOnSensor(self, turnOnTime, period, Id):
