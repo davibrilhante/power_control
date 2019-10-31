@@ -238,6 +238,7 @@ class Sensor(object):
     def transmitMessage(self, tpc=True):
         msg = Message()
         msg.loremIpsum(8)
+        msg.transmitter = self
         if tpc and (self.cache != None):
             power = sensorTPCClosedLoop(self.cache.header['transmittedPower'],self.cache.power, 
                 self.scenario.network.sensibility, self.txPower, self.scenario.network.SNRThreshold, 
@@ -249,8 +250,8 @@ class Sensor(object):
         self.scenario.sendUserMessage(msg, self)       
 
         if self.battery.charge <= 0:
-            print("Battery Charge %f" % self.battery.charge)
-            print("Battery Charge at %d" % self.scenario.now)
+            #print("Battery Charge %f" % self.battery.charge)
+            #print("Battery Charge at %d" % self.scenario.now)
             self.lifecycle['lifetime'] = self.scenario.now
             sp.exceptions.StopProcess(self.lifeProcess)
             sp.exceptions.StopProcess(self.txProcess)
@@ -267,8 +268,8 @@ class Sensor(object):
             self.battery.sendMessage(msg.power, msg.length(),self.txRate)
             self.scenario.sendUserMessage(msg, self)
             if self.battery.charge <= 0:
-                print("Battery Charge %f" % self.battery.charge)
-                print("Battery Charge at %d" % self.scenario.now)
+                #print("Battery Charge %f" % self.battery.charge)
+                #print("Battery Charge at %d" % self.scenario.now)
                 self.lifecycle['lifetime'] = self.scenario.now
                 sp.exceptions.StopProcess(self.lifeProcess)
                 sp.exceptions.StopProcess(self.txProcess)
@@ -281,11 +282,11 @@ class Sensor(object):
         if message.power + self.antennaGain >= self.sensibility:
             self.cache = message
             if message.type == 2:
-                print("CTS Received. Sending Message...")
+                #print("CTS Received. Sending Message...")
                 self.transmitMessage()
 
             if message.type == 3:
-                print("Message not Received. Updating TPC Offset...")
+                #print("Message not Received. Updating TPC Offset...")
                 self.TPCOffset += float(sys.argv[4])
                 self.transmitMessage()
         else:
@@ -349,14 +350,15 @@ class Network(object):
         if (message.power + self.antennaGain >= self.sensibility) and (message.power - self.noiseFigure >= self.SNRThreshold):
             #print(message.payload)
             if message.type==1:
-                print("RTS Received. Sending CTS...")
+                #print("RTS Received. Sending CTS...")
                 self.sendCTS(message.transmitter)
             elif message.type==0:
-                print("Data Message succesfully received")
+                #print("Data Message succesfully received")
+                1
         else:
             PKT_LOSS += 1
             if message.type==0:
-                print("Message lost...")
+                #print("Message lost...")
                 self.sendRecover(message.transmitter)
             #print("Unsuficient transmited power %d (received) x %d (sensibility)" % (message.power, self.sensibility))
         
@@ -415,7 +417,7 @@ class Scenario(sp.Environment):
 
 if __name__=="__main__":
     env = Scenario()
-    env.spreadsensors(1) #int(sys.argv[1]))
+    env.spreadsensors(10) #int(sys.argv[1]))
     env.run(until=SIMULATION_TIME)
     avgLifeTime = [i.lifecycle['lifetime'] for i in env.sensors]
     print(sum(avgLifeTime)/len(env.sensors)/(24*3600))

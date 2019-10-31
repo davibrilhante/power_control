@@ -238,8 +238,8 @@ class Sensor(object):
             self.scenario.sendUserMessage(msg, self)       
 
             if self.battery.charge <= 0:
-                print("Battery Charge %f" % self.battery.charge)
-                print("Battery Charge at %d" % self.scenario.now)
+                #print("Battery Charge %f" % self.battery.charge)
+                #print("Battery Charge at %d" % self.scenario.now)
                 self.lifecycle['lifetime'] = self.scenario.now
                 sp.exceptions.StopProcess(self.lifeProcess)
                 sp.exceptions.StopProcess(self.txProcess)
