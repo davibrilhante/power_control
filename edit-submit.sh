@@ -21,6 +21,7 @@ for s in ${SNR[@]}
 			#echo -e "\nArguments = ${DURATION[2]} 30 $s 0.1 $ONOFF $d 1 \$(Process)\nQueue $RUN\n\n" >> submit;
 			touch results/output_$1_$s_$d_$x
 			echo -e "python3 $1 ${DURATION[2]} 30 $s 0.1 $ONOFF $d 1 $x >> results/output_$1_$s_$d_$x" >> submit;
+		done
 	done
 done
 
