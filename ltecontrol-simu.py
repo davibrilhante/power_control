@@ -20,9 +20,42 @@ TX_PKTS = 0
 
 betaOffset = [0, 0] + [1.125 + i*0.125 for i in range(2)]+[1.625 + i*0.25 for i in range(4)]+[2.875, 3.125, 3.5, 4, 5, 6.25]
 
-def ltePowerControl(ClosedLoop, PRBPower, physicalRB, alpha, cqi, paramK, recvPower, txPower, txPMax):
-    pathLoss = abs(recvPower) + abs(txPower)
+def snrToCqi(snr):
+    cqi = 1
+    if snr >= 4  and snr<6:
+        cqi += 1
+    elif snr>=6 and snr<8:
+        cqi += 2
+    elif snr>=8 and snr<10:
+        cqi += 3
+    elif snr>=10 and snr<12:
+        cqi += 4
+    elif snr>=12 and snr<14:
+        cqi += 5
+    elif snr>=14 and snr<16:
+        cqi += 6
+    elif snr>=16 and snr<18:
+        cqi += 7
+    elif snr>=18 and snr<20:
+        cqi += 8
+    elif snr>=20 and snr<22:
+        cqi += 9 
+    elif snr>=22 and snr<24:
+        cqi += 10
+    elif snr>=24 and snr<26:
+        cqi += 11
+    elif snr>=26 and snr<28:
+        cqi += 12
+    elif snr>=28 and snr<30:
+        cqi += 13
+    elif snr>=30:
+        cqi += 14
+    return cqi
 
+
+def ltePowerControl(ClosedLoop, PRBPower, physicalRB, alpha, snr, paramK, recvPower, txPower, txPMax):
+    pathLoss = abs(recvPower) + abs(txPower)
+    cqi = snrToCqi(snr) - 1 # menos um para ajustar a numeracao dos indices iniciando de 0
     if ClosedLoop:
         BPRE = 4
         if paramK == 1.25:
@@ -227,11 +260,11 @@ class Sensor(object):
             msg.loremIpsum(8)
             if tpc and (self.cache != None):
                 #ltePowerControl(ClosedLoop, PRBPower, physicalRB, alpha, cqi, paramK, recvPower, txPower, txPMax)
-                power = ltePowerControl(True, -80, 1, self.TPCOffset, 2, 1.25, self.cache.power, 
+                power = ltePowerControl(True, -80, 1, self.TPCOffset, float(sys.argv[3]), 1.25, self.cache.power, 
                         self.cache.header['transmittedPower'], self.txPower)
                 msg.power = self.antennaGain + power
             else:
-                power = ltePowerControl(False, -80, 1, self.TPCOffset, 2, 1.25, self.cache.power, 
+                power = ltePowerControl(False, -80, 1, self.TPCOffset, float(sys.argv[3]), 1.25, self.cache.power, 
                         self.cache.header['transmittedPower'], self.txPower)
                 msg.power = self.antennaGain + self.txPower
             self.battery.sendMessage(msg.power, msg.length(),self.txRate)
